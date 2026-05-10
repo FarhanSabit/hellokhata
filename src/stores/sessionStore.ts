@@ -15,6 +15,7 @@ export interface User {
   branchId: string;
   name: string;
   phone: string;
+  email: string;
   role: UserRole;
 }
 
@@ -56,6 +57,7 @@ export interface AuthResponse {
     name: string;
     phone: string;
     role: UserRole;
+    email?: string;
   };
   business: {
     id: string;
@@ -211,6 +213,7 @@ export const useSessionStore = create<SessionState>()(
             name: response.user.name,
             phone: response.user.phone,
             role: response.user.role,
+            email: response.user.email ?? ''
           },
           business: {
             id: response.business.id,
@@ -305,12 +308,12 @@ export const useSessionStore = create<SessionState>()(
 
 // ─── Helper Hooks ─────────────────────────────────────────────────────────────
 
-export const useUser            = () => useSessionStore((s) => s.user);
-export const useBusiness        = () => useSessionStore((s) => s.business);
-export const usePlan            = () => useSessionStore((s) => s.plan);
-export const useFeatures        = () => useSessionStore((s) => s.features);
+export const useUser = () => useSessionStore((s) => s.user);
+export const useBusiness = () => useSessionStore((s) => s.business);
+export const usePlan = () => useSessionStore((s) => s.plan);
+export const useFeatures = () => useSessionStore((s) => s.features);
 export const useIsAuthenticated = () => useSessionStore((s) => s.isAuthenticated);
-export const useIsOwner         = () => useSessionStore((s) => s.user?.role === 'owner');
-export const useIsManager       = () => useSessionStore((s) =>
+export const useIsOwner = () => useSessionStore((s) => s.user?.role === 'owner');
+export const useIsManager = () => useSessionStore((s) =>
   s.user?.role === 'owner' || s.user?.role === 'manager'
 );

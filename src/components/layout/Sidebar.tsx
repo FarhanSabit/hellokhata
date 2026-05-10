@@ -42,14 +42,14 @@ import { usePathname } from 'next/navigation';
 
 
 const mainNavItems = [
-  { page: '/' , icon: LayoutDashboard, labelKey: 'Dashboard', labelBn: 'ড্যাশবোর্ড' },
+  { page: '/', icon: LayoutDashboard, labelKey: 'Dashboard', labelBn: 'ড্যাশবোর্ড' },
   { page: '/sales', icon: ShoppingCart, labelKey: 'Sales', labelBn: 'বিক্রি' },
   { page: '/sales/quotations', icon: FileText, labelKey: 'Quotations', labelBn: 'কোটেশন' },
-  { page: '/returns'  , icon: RotateCcw, labelKey: 'Returns', labelBn: 'রিটার্ন' },
+  { page: '/returns', icon: RotateCcw, labelKey: 'Returns', labelBn: 'রিটার্ন' },
   { page: '/purchases', icon: Truck, labelKey: 'Purchases', labelBn: 'ক্রয়' },
-  { page: '/parties' , icon: Users, labelKey: 'Parties', labelBn: 'পার্টি' },
+  { page: '/parties', icon: Users, labelKey: 'Parties', labelBn: 'পার্টি' },
   { page: '/inventory', icon: Package, labelKey: 'Inventory', labelBn: 'ইনভেন্টরি' },
-  { page: '/inventory/batches' , icon: Tag, labelKey: 'Batches', labelBn: 'ব্যাচ' },
+  { page: '/inventory/batches', icon: Tag, labelKey: 'Batches', labelBn: 'ব্যাচ' },
   { page: '/expenses', icon: Receipt, labelKey: 'Expenses', labelBn: 'খরচ' },
   { page: '/reports', icon: BarChart3, labelKey: 'Reports', labelBn: 'রিপোর্ট' },
   { page: '/collection', icon: LayoutList, labelKey: 'Collection Center', labelBn: 'কালেকশন সেন্টার' },
@@ -58,7 +58,7 @@ const mainNavItems = [
 
 const bottomNavItems = [
   { page: '/ai', icon: Sparkles, labelKey: 'AI', labelBn: 'AI সহায়ক', isPro: true },
-  { page: '/settings' , icon: Settings, labelKey: 'Settings', labelBn: 'সেটিংস' },
+  { page: '/settings/profile', icon: Settings, labelKey: 'Settings', labelBn: 'সেটিংস' },
 ];
 
 export function Sidebar() {
@@ -66,7 +66,7 @@ export function Sidebar() {
   const { business, logout, plan, features } = useSessionStore();
   const { sidebarCollapsed, setSidebarCollapsed, currentPage, navigateTo } = useUiStore();
   const path = usePathname();
-   const language = useUiStore((state) => state.language);
+  const language = useUiStore((state) => state.language);
 
   return (
     <TooltipProvider>
@@ -126,39 +126,39 @@ export function Sidebar() {
           <nav className="space-y-1">
             {mainNavItems?.map((item, index) => (
               <div key={item.page} className="stagger-item" style={{ animationDelay: `${index * 30}ms` }}>
-     <Link href={item.page}
-        className={cn(
-          'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 w-full',
-          'relative group',
-          // Default state
-          'text-muted-foreground hover:text-foreground hover:bg-muted/50',
-          // Active state with indigo accent
-          path === item.page && [
-            'text-primary bg-primary-subtle',
-          ],
-          sidebarCollapsed && 'justify-center px-2',
-        )}
-      >
-        {/* Active indicator dot */}
-        {  path === item.page && (
-          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full" />
-        )}
-        
-        <item.icon className={cn(
-          'h-5 w-5 flex-shrink-0 transition-all duration-200',
-            path === item.page && 'text-primary',
-          'group-hover:scale-105'
-        )} />
-        
-        {!sidebarCollapsed && (
-          <>
-            <span className="truncate">{language ==='en' ? item.labelKey : item.labelBn}</span>
-            {/* {isLocked && (
+                <Link href={item.page}
+                  className={cn(
+                    'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 w-full',
+                    'relative group',
+                    // Default state
+                    'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                    // Active state with indigo accent
+                    path === item.page && [
+                      'text-primary bg-primary-subtle',
+                    ],
+                    sidebarCollapsed && 'justify-center px-2',
+                  )}
+                >
+                  {/* Active indicator dot */}
+                  {path === item.page && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full" />
+                  )}
+
+                  <item.icon className={cn(
+                    'h-5 w-5 flex-shrink-0 transition-all duration-200',
+                    path === item.page && 'text-primary',
+                    'group-hover:scale-105'
+                  )} />
+
+                  {!sidebarCollapsed && (
+                    <>
+                      <span className="truncate">{language === 'en' ? item.labelKey : item.labelBn}</span>
+                      {/* {isLocked && (
               <Badge variant="warning" size="sm" className="ml-auto">Pro</Badge>
             )} */}
-          </>
-        )}
-      </Link>
+                    </>
+                  )}
+                </Link>
               </div>
             ))}
           </nav>
@@ -169,39 +169,39 @@ export function Sidebar() {
           {bottomNavItems?.map((item, index) => (
             <div key={item.page} className="stagger-item" style={{ animationDelay: `${(mainNavItems.length + index) * 30}ms` }}>
               <Link href={item.page}
-        className={cn(
-          'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 w-full',
-          'relative group',
-          // Default state
-          'text-muted-foreground hover:text-foreground hover:bg-muted/50',
-          // Active state with indigo accent
-          path === item.page && [
-            'text-primary bg-primary-subtle',
-          ],
-          sidebarCollapsed && 'justify-center px-2',
-          //isLocked && 'opacity-50 cursor-not-allowed'
-        )}
-      >
-        {/* Active indicator dot */}
-        {  path === item.page && (
-          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full" />
-        )}
+                className={cn(
+                  'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 w-full',
+                  'relative group',
+                  // Default state
+                  'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                  // Active state with indigo accent
+                  path === item.page && [
+                    'text-primary bg-primary-subtle',
+                  ],
+                  sidebarCollapsed && 'justify-center px-2',
+                  //isLocked && 'opacity-50 cursor-not-allowed'
+                )}
+              >
+                {/* Active indicator dot */}
+                {path === item.page && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full" />
+                )}
 
-        <item.icon className={cn(
-          'h-5 w-5 flex-shrink-0 transition-all duration-200',
-            path === item.page && 'text-primary',
-          'group-hover:scale-105'
-        )} />
+                <item.icon className={cn(
+                  'h-5 w-5 flex-shrink-0 transition-all duration-200',
+                  path === item.page && 'text-primary',
+                  'group-hover:scale-105'
+                )} />
 
-        {!sidebarCollapsed && (
-          <>
-            <span className="truncate">{language ==='en' ? item.labelKey : item.labelBn}</span>
-            {/* {isLocked && (
+                {!sidebarCollapsed && (
+                  <>
+                    <span className="truncate">{language === 'en' ? item.labelKey : item.labelBn}</span>
+                    {/* {isLocked && (
               <Badge variant="warning" size="sm" className="ml-auto">Pro</Badge>
             )} */}
-          </>
-        )}
-      </Link>
+                  </>
+                )}
+              </Link>
             </div>
           ))}
 
@@ -219,7 +219,7 @@ export function Sidebar() {
           </button>
         </div>
 
-     
+
       </aside>
     </TooltipProvider>
   );
