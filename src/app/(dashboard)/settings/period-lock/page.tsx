@@ -20,6 +20,8 @@ import {
 import { useAppTranslation } from '@/hooks/useAppTranslation';
 import { useNavigation } from '@/stores/uiStore';
 import { format } from 'date-fns';
+import { useGetPeriodLocks, usePeriodLock, useUnlockPeriod } from '@/hooks/api/useLock';
+import { toast } from 'sonner';
 
 interface PeriodLock {
   id: string;
@@ -34,8 +36,7 @@ export default function PeriodLockPage() {
   const { t, isBangla } = useAppTranslation();
   const { navigateTo } = useNavigation();
   
-  const [locks, setLocks] = useState<PeriodLock[]>([]);
-  const [loading, setLoading] = useState(true);
+ 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     periodStart: '',
@@ -45,28 +46,14 @@ export default function PeriodLockPage() {
   const [saving, setSaving] = useState(false);
   const [globalLockDate, setGlobalLockDate] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchLocks();
-  }, []);
-
-  const fetchLocks = async () => {
-    try {
-      // In production, fetch from API
-      // const response = await fetch('/api/period-locks');
-      setLocks([]);
-    } catch (error) {
-      console.error('Error fetching locks:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {mutate: lockPeriod,isPending} = usePeriodLock()
+  const {mutate: unlockPeriod} = useUnlockPeriod()
+  const {data: locksData, isLoading} = useGetPeriodLocks()
 
   const handleLock = async () => {
     if (!form.periodStart || !form.periodEnd) return;
-    
-    setSaving(true);
-    try {
-      // In production, call API
+
+     // In production, call API
       const newLock: PeriodLock = {
         id: Date.now().toString(),
         periodStart: new Date(form.periodStart),
@@ -75,14 +62,16 @@ export default function PeriodLockPage() {
         notes: form.notes,
       };
       
-      setLocks([newLock, ...locks]);
-      setShowForm(false);
-      setForm({ periodStart: '', periodEnd: '', notes: '' });
-    } catch (error) {
-      console.error('Error locking period:', error);
-    } finally {
-      setSaving(false);
-    }
+      lockPeriod({
+        periodStart: form.periodStart,
+        periodEnd: form.periodEnd,
+        notes: form.notes,
+      },{
+        onSuccess: () =>{
+          setShowForm(false);
+          setForm({ periodStart: '', periodEnd: '', notes: '' });
+        }
+      });
   };
 
   const handleUnlock = async (lockId: string) => {
@@ -92,12 +81,14 @@ export default function PeriodLockPage() {
     )) {
       return;
     }
-    
-    try {
-      setLocks(locks.filter(l => l.id !== lockId));
-    } catch (error) {
-      console.error('Error unlocking:', error);
-    }
+  
+    unlockPeriod(lockId,{
+      onSuccess: (data) => {
+        if(data.success){
+          toast.success(isBangla ? 'সফলভাবে আনলক করা হয়েছে' : 'Successfully unlocked');
+        }
+      }
+    });
   };
 
   const handleSetGlobalLock = async () => {
@@ -258,7 +249,7 @@ export default function PeriodLockPage() {
             {isBangla ? 'সক্রিয় লক' : 'Active Locks'}
           </h2>
           
-          {locks.length === 0 ? (
+          {locksData?.length === 0 ? (
             <Card>
               <CardContent className="py-8 text-center">
                 <Unlock className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
@@ -274,7 +265,7 @@ export default function PeriodLockPage() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {locks.map((lock) => (
+              {locksData?.map((lock:any) => (
                 <Card key={lock.id} className="border-l-4 border-l-red-500">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
