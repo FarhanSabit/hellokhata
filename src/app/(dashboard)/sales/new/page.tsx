@@ -3,16 +3,16 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { PageHeader, EmptyState } from '@/components/common';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { format } from 'date-fns';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import {
   Select,
   SelectContent,
@@ -21,18 +21,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  ShoppingCart,
   Plus,
-  Search,
-  Minus,
   Trash2,
-  User,
-  CreditCard,
-  Banknote,
-  Smartphone,
+  Calendar as CalendarIcon,
   Check,
   X,
   ArrowLeft,
+  Camera,
+  Search,
+  Users
 } from 'lucide-react';
 import { useCurrency } from '@/hooks/useAppTranslation';
 import { useAppTranslation } from '@/hooks/useAppTranslation';
@@ -40,122 +37,309 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useGetItems } from '@/hooks/api/useItems';
 import { useParties } from '@/hooks/api/useParties';
-import { create } from 'zustand';
 import { useCreateSales } from '@/hooks/api/useSales';
 
-interface SaleItem {
+interface BillingItemRow {
+  id: string;
   itemId: string;
   itemName: string;
   quantity: number;
   unitPrice: number;
   costPrice: number;
-  discount: number;
+  discountPercent: number;
+  discountFlat: number;
   total: number;
-  profit: number;
+  searchQuery: string;
+  showSuggestions: boolean;
 }
 
 export default function NewSalePage() {
   const router = useRouter();
   const { t, isBangla } = useAppTranslation();
   const { formatCurrency } = useCurrency();
+  const { mutate, isPending } = useCreateSales();
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPartyId, setSelectedPartyId] = useState<string>('');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'mobile_banking' | 'credit'>('cash');
-  const [paidAmount, setPaidAmount] = useState<string>('');
-  const [discount, setDiscount] = useState<string>('0');
-  const [notes, setNotes] = useState('');
-  const [items, setItems] = useState<SaleItem[]>([]);
-
-  const { data: itemsData } = useGetItems({ search: searchTerm });
-  const { data: partiesData = [] } = useParties();
-   const availableItems = itemsData?.data || [];
+  // API Data
+  const { data: itemsData } = useGetItems({ page: 1, limit: 100 });
+  const { data: partiesData } = useParties({ type: 'customer' });
+  const availableItems = itemsData?.data || [];
   const parties = partiesData?.data || [];
 
+  // Form State
+  const [selectedPartyId, setSelectedPartyId] = useState<string>('');
+  const [partySearchQuery, setPartySearchQuery] = useState('');
+  const [showPartySuggestions, setShowPartySuggestions] = useState(false);
 
-  // Calculate totals
-  const subtotal = items.reduce((sum, item) => sum + item.total, 0);
-  const discountAmount = parseFloat(discount) || 0;
-  const total = subtotal - discountAmount;
-  const {mutate,isPending} = useCreateSales();
+  const [invoiceNo, setInvoiceNo] = useState('8');
+  const [isManualInvoiceNo, setIsManualInvoiceNo] = useState(false);
+  const [invoiceDate, setInvoiceDate] = useState<Date>(new Date());
   
-  // Auto-calculate paid and due based on payment method
-  // For cash/card/mobile: default to full payment, for credit: default to 0
-  const effectivePaidAmount = paymentMethod === 'credit'
-    ? (parseFloat(paidAmount) || 0)
-    : (paidAmount === '' ? total : (parseFloat(paidAmount) || total));
-  const due = total - effectivePaidAmount;
-  const totalProfit = items.reduce((sum, item) => sum + item.profit, 0);
+  const [notes, setNotes] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'mobile_banking' | 'credit'>('cash');
+  const [paidAmount, setPaidAmount] = useState<string>('');
+  const [images, setImages] = useState<File[]>([]);
 
-  // Add item to sale
-  const addItem = (item: typeof availableItems[0]) => {
-    const existing = items.find((i) => i.itemId === item.id);
-    if (existing) {
-      updateQuantity(existing.itemId, existing.quantity + 1);
-    } else {
-      setItems([
-        ...items,
-        {
-          itemId: item.id,
-          itemName: item.name,
-          quantity: 1,
-          unitPrice: item.sellingPrice,
-          costPrice: item.costPrice,
-          discount: 0,
-          total: item.sellingPrice,
-          profit: item.sellingPrice - item.costPrice,
-        },
-      ]);
+  // Billing Items Table Rows
+  const [items, setItems] = useState<BillingItemRow[]>([
+    {
+      id: 'initial-row',
+      itemId: '',
+      itemName: '',
+      quantity: 1,
+      unitPrice: 0,
+      costPrice: 0,
+      discountPercent: 0,
+      discountFlat: 0,
+      total: 0,
+      searchQuery: '',
+      showSuggestions: false,
     }
-    setSearchTerm('');
+  ]);
+
+  // Parties Filtering
+  const filteredParties = useMemo(() => {
+    if (!partySearchQuery) return parties;
+    return parties.filter((p: any) => 
+      p.name.toLowerCase().includes(partySearchQuery.toLowerCase()) ||
+      p.phone?.includes(partySearchQuery)
+    );
+  }, [parties, partySearchQuery]);
+
+  // Selected Party Name
+  const selectedPartyName = useMemo(() => {
+    const party = parties.find((p: any) => p.id === selectedPartyId);
+    return party ? party.name : '';
+  }, [parties, selectedPartyId]);
+
+  // Calculations
+  const subtotal = useMemo(() => {
+    return items.reduce((sum, item) => sum + item.total, 0);
+  }, [items]);
+
+  const totalDiscount = useMemo(() => {
+    return items.reduce((sum, item) => sum + item.discountFlat, 0);
+  }, [items]);
+
+  const total = subtotal; // In this mockup, total is sum of rows after row-level discounts
+
+  const effectivePaidAmount = useMemo(() => {
+    if (paymentMethod === 'credit') return 0;
+    return paidAmount === '' ? total : (parseFloat(paidAmount) || total);
+  }, [paymentMethod, paidAmount, total]);
+
+  const due = Math.max(0, total - effectivePaidAmount);
+
+  // Add Item Row
+  const addItemRow = () => {
+    setItems((prev) => [
+      ...prev,
+      {
+        id: Math.random().toString(),
+        itemId: '',
+        itemName: '',
+        quantity: 1,
+        unitPrice: 0,
+        costPrice: 0,
+        discountPercent: 0,
+        discountFlat: 0,
+        total: 0,
+        searchQuery: '',
+        showSuggestions: false,
+      }
+    ]);
   };
 
-  // Update item quantity
-  const updateQuantity = (itemId: string, quantity: number) => {
-    if (quantity <= 0) {
-      removeItem(itemId);
+  // Remove Item Row
+  const removeItemRow = (id: string) => {
+    if (items.length === 1) {
+      setItems([
+        {
+          id: 'initial-row',
+          itemId: '',
+          itemName: '',
+          quantity: 1,
+          unitPrice: 0,
+          costPrice: 0,
+          discountPercent: 0,
+          discountFlat: 0,
+          total: 0,
+          searchQuery: '',
+          showSuggestions: false,
+        }
+      ]);
       return;
     }
-    setItems(
-      items.map((item) => {
-        if (item.itemId === itemId) {
-          const total = quantity * item.unitPrice - item.discount;
-          const profit = (item.unitPrice - item.costPrice) * quantity;
-          return { ...item, quantity, total, profit };
-        }
-        return item;
-      })
+    setItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  // Calculate Row Total helper
+  const calculateRowTotal = (qty: number, price: number, flatDiscount: number) => {
+    return Math.max(0, qty * price - flatDiscount);
+  };
+
+  // Handle Name field input (search items)
+  const handleNameChange = (id: string, query: string) => {
+    setItems((prev) => prev.map((item) => {
+      if (item.id === id) {
+        return { 
+          ...item, 
+          itemName: query, 
+          searchQuery: query, 
+          showSuggestions: true 
+        };
+      }
+      return item;
+    }));
+  };
+
+  // Handle product selection from dropdown
+  const handleSelectProduct = (rowId: string, product: any) => {
+    setItems((prev) => prev.map((item) => {
+      if (item.id === rowId) {
+        const qty = item.quantity || 1;
+        const price = product.sellingPrice || 0;
+        const flatDiscount = item.discountFlat || 0;
+        const total = calculateRowTotal(qty, price, flatDiscount);
+        return {
+          ...item,
+          itemId: product.id,
+          itemName: product.name,
+          searchQuery: product.name,
+          unitPrice: price,
+          costPrice: product.costPrice || 0,
+          total,
+          showSuggestions: false
+        };
+      }
+      return item;
+    }));
+  };
+
+  // Handle Quantity Change
+  const handleQuantityChange = (id: string, val: string) => {
+    const qty = parseFloat(val) || 0;
+    setItems((prev) => prev.map((item) => {
+      if (item.id === id) {
+        const price = item.unitPrice || 0;
+        const flat = parseFloat(((price * qty) * (item.discountPercent / 100)).toFixed(2)) || 0;
+        const total = calculateRowTotal(qty, price, flat);
+        return { 
+          ...item, 
+          quantity: qty, 
+          discountFlat: flat, 
+          total 
+        };
+      }
+      return item;
+    }));
+  };
+
+  // Handle Rate Change
+  const handleRateChange = (id: string, val: string) => {
+    const rate = parseFloat(val) || 0;
+    setItems((prev) => prev.map((item) => {
+      if (item.id === id) {
+        const qty = item.quantity || 0;
+        const flat = parseFloat(((rate * qty) * (item.discountPercent / 100)).toFixed(2)) || 0;
+        const total = calculateRowTotal(qty, rate, flat);
+        return { 
+          ...item, 
+          unitPrice: rate, 
+          discountFlat: flat, 
+          total 
+        };
+      }
+      return item;
+    }));
+  };
+
+  // Handle Row Discount % Change
+  const handleDiscountPercentChange = (id: string, val: string) => {
+    const percent = parseFloat(val) || 0;
+    setItems((prev) => prev.map((item) => {
+      if (item.id === id) {
+        const qty = item.quantity || 0;
+        const price = item.unitPrice || 0;
+        const flat = parseFloat(((price * qty) * (percent / 100)).toFixed(2)) || 0;
+        const total = calculateRowTotal(qty, price, flat);
+        return { 
+          ...item, 
+          discountPercent: percent, 
+          discountFlat: flat, 
+          total 
+        };
+      }
+      return item;
+    }));
+  };
+
+  // Handle Row Discount Flat Tk Change
+  const handleDiscountFlatChange = (id: string, val: string) => {
+    const flat = parseFloat(val) || 0;
+    setItems((prev) => prev.map((item) => {
+      if (item.id === id) {
+        const qty = item.quantity || 0;
+        const price = item.unitPrice || 0;
+        const totalCost = price * qty;
+        const percent = totalCost > 0 ? parseFloat(((flat / totalCost) * 100).toFixed(2)) : 0;
+        const total = calculateRowTotal(qty, price, flat);
+        return { 
+          ...item, 
+          discountPercent: percent, 
+          discountFlat: flat, 
+          total 
+        };
+      }
+      return item;
+    }));
+  };
+
+  // Filter available items for inline suggestions dropdown
+  const getFilteredProducts = (query: string) => {
+    if (!query) return availableItems.slice(0, 10);
+    return availableItems.filter((item: any) =>
+      item.name.toLowerCase().includes(query.toLowerCase()) ||
+      item.sku?.toLowerCase().includes(query.toLowerCase())
     );
   };
 
-  // Remove item
-  const removeItem = (itemId: string) => {
-    setItems(items.filter((item) => item.itemId !== itemId));
+  // Handle row blur with delay to register suggestion clicks
+  const handleRowBlur = (id: string) => {
+    setTimeout(() => {
+      setItems((prev) => prev.map((item) => {
+        if (item.id === id) {
+          return { ...item, showSuggestions: false };
+        }
+        return item;
+      }));
+    }, 200);
   };
 
-  // Handle submit
+  // Handle submit form
   const handleSubmit = async () => {
-    if (items.length === 0) {
+    // Filter empty items
+    const validItems = items.filter((i) => i.itemId !== '');
+    if (validItems.length === 0) {
       toast.error(isBangla ? 'অন্তত একটি পণ্য যোগ করুন' : 'Add at least one item');
       return;
     }
 
-    const newSales = {
+    const payload = {
       partyId: selectedPartyId || undefined,
-      items: items.map((item) => ({
+      items: validItems.map((item) => ({
         itemId: item.itemId,
         itemName: item.itemName,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
-        discount: item.discount,
+        discount: item.discountFlat,
       })),
-      discount: discountAmount,
+      discount: totalDiscount,
       paidAmount: effectivePaidAmount,
       paymentMethod,
       notes: notes || undefined,
-    }
+    };
 
-    mutate(newSales, {
+    mutate(payload, {
       onSuccess: () => {
         toast.success(isBangla ? 'বিক্রি সফলভাবে সম্পন্ন হয়েছে' : 'Sale completed successfully');
         router.push('/sales');
@@ -163,269 +347,392 @@ export default function NewSalePage() {
     });
   };
 
-  // Auto-set paid amount based on payment method
-  const handlePaymentMethodChange = (method: typeof paymentMethod) => {
-    setPaymentMethod(method);
-    if (method === 'credit') {
-      setPaidAmount('0');
-    }
-  };
-
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={t('sales.newSale')}
-        subtitle={isBangla ? 'নতুন বিক্রি তৈরি করুন' : 'Create a new sale'}
-        icon={ShoppingCart}
-      >
-        <Button variant="outline" onClick={() => router.back()}>
+      {/* Top Header Section */}
+      <div className="flex items-center justify-between pb-2">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+          {isBangla ? 'নতুন বিক্রি' : 'New Sale'}
+        </h1>
+        <Button variant="ghost" onClick={() => router.back()} className="text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4 mr-2" />
           {isBangla ? 'পেছনে' : 'Back'}
         </Button>
-      </PageHeader>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Item Search & Selection */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Customer Selection */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{t('sales.customer')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Select value={selectedPartyId || 'none'} onValueChange={(v) => setSelectedPartyId(v === 'none' ? '' : v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder={isBangla ? 'গ্রাহক নির্বাচন করুন (ঐচ্ছিক)' : 'Select customer (optional)'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">{isBangla ? 'সাধারণ গ্রাহক' : 'Walk-in customer'}</SelectItem>
-                  {parties
-                    .filter((p) => p.type === 'customer' || p.type === 'both')
-                    .map((party) => (
-                      <SelectItem key={party.id} value={party.id}>
-                        {party.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </CardContent>
-          </Card>
-
-          {/* Item Search */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{t('sales.items')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                <Input
-                  placeholder={t('sales.searchItems')}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-
-              {/* Item Suggestions */}
-              {searchTerm && (
-                <div className="border rounded-lg divide-y max-h-60 overflow-auto">
-                  {availableItems.length === 0 ? (
-                    <div className="p-4 text-center text-gray-500 text-sm">
-                      {isBangla ? 'কোনো পণ্য পাওয়া যায়নি' : 'No items found'}
+      <div className="space-y-6">
+        {/* Row 1 Layout: Select Party, Invoice No, Invoice Date */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+          {/* Select Party */}
+          <div className="relative space-y-2">
+            <Label className="text-sm font-medium text-foreground">
+              {isBangla ? 'পার্টি নির্বাচন করুন' : 'Select Party'}
+            </Label>
+            <div className="relative">
+              <Input
+                value={selectedPartyName || partySearchQuery}
+                onChange={(e) => {
+                  setPartySearchQuery(e.target.value);
+                  if (selectedPartyId) setSelectedPartyId('');
+                  setShowPartySuggestions(true);
+                }}
+                onFocus={() => setShowPartySuggestions(true)}
+                onBlur={() => {
+                  setTimeout(() => setShowPartySuggestions(false), 200);
+                }}
+                placeholder={isBangla ? 'পার্টি খুঁজুন...' : 'Search for party'}
+                className="pr-10 h-11 bg-background/50 border-input"
+              />
+              <Users className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              
+              {showPartySuggestions && (
+                <div className="absolute z-50 left-0 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-xl max-h-60 overflow-y-auto divide-y divide-border">
+                  {filteredParties.length === 0 ? (
+                    <div className="p-3 text-center text-sm text-muted-foreground">
+                      {isBangla ? 'কোনো পার্টি পাওয়া যায়নি' : 'No parties found'}
                     </div>
                   ) : (
-                    availableItems.map((item) => (
+                    filteredParties.map((party: any) => (
                       <button
-                        key={item.id}
-                        className="w-full p-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-900"
-                        onClick={() => addItem(item)}
+                        key={party.id}
+                        type="button"
+                        className="w-full text-left p-3 hover:bg-muted/80 text-sm transition-colors flex justify-between"
+                        onClick={() => {
+                          setSelectedPartyId(party.id);
+                          setPartySearchQuery('');
+                        }}
                       >
-                        <div className="text-left">
-                          <p className="font-medium text-sm">{item.name}</p>
-                          <p className="text-xs text-gray-500">
-                            {formatCurrency(item.sellingPrice)} • {isBangla ? 'স্টক' : 'Stock'}: {item.currentStock}
-                          </p>
-                        </div>
-                        <Plus className="h-4 w-4 text-emerald-600" />
+                        <span className="font-medium text-foreground">{party.name}</span>
+                        {party.phone && <span className="text-xs text-muted-foreground">{party.phone}</span>}
                       </button>
                     ))
                   )}
                 </div>
               )}
+            </div>
+          </div>
 
-              {/* Selected Items */}
-              {items.length > 0 ? (
-                <div className="border rounded-lg divide-y">
-                  {items.map((item) => (
-                    <div key={item.itemId} className="p-3 flex items-center justify-between">
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{item.itemName}</p>
-                        <p className="text-xs text-gray-500">{formatCurrency(item.unitPrice)}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center border rounded-lg">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => updateQuantity(item.itemId, item.quantity - 1)}
-                          >
-                            <Minus className="h-3 w-3" />
-                          </Button>
-                          <span className="w-8 text-center text-sm font-medium">
-                            {item.quantity}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => updateQuantity(item.itemId, item.quantity + 1)}
-                          >
-                            <Plus className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <div className="w-24 text-right">
-                          <p className="font-medium text-sm">{formatCurrency(item.total)}</p>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-500"
-                          onClick={() => removeItem(item.itemId)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="border rounded-lg p-8 text-center">
-                  <ShoppingCart className="h-12 w-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-500 text-sm">
-                    {isBangla ? 'পণ্য খুঁজে যোগ করুন' : 'Search and add items'}
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* Invoice No */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <Label className="text-sm font-medium text-foreground">
+                {isBangla ? 'ইনভয়েস নম্বর' : 'Invoice No'}
+              </Label>
+              <button
+                type="button"
+                onClick={() => setIsManualInvoiceNo(!isManualInvoiceNo)}
+                className="text-xs text-emerald-500 font-semibold hover:underline"
+              >
+                {isManualInvoiceNo ? (isBangla ? 'স্বয়ংক্রিয়' : 'Auto') : (isBangla ? 'ম্যানুয়াল' : 'Manual')}
+              </button>
+            </div>
+            <Input
+              value={invoiceNo}
+              onChange={(e) => setInvoiceNo(e.target.value)}
+              disabled={!isManualInvoiceNo}
+              placeholder={isBangla ? 'স্বয়ংক্রিয় ইনভয়েস' : 'Auto Generated'}
+              className="h-11 bg-background/50 border-input font-medium"
+            />
+          </div>
+
+          {/* Invoice Date */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-foreground">
+              {isBangla ? 'ইনভয়েস তারিখ' : 'Invoice Date'}
+            </Label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="w-full h-11 justify-between text-left font-normal bg-background/50 border-input text-foreground hover:bg-muted"
+                >
+                  <span>{format(invoiceDate, 'dd MMM yyyy')}</span>
+                  <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <Calendar
+                  mode="single"
+                  selected={invoiceDate}
+                  onSelect={(date) => date && setInvoiceDate(date)}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
 
-        {/* Right: Summary */}
-        <div className="space-y-6">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{isBangla ? 'সারসংক্ষেপ' : 'Summary'}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">{t('common.subtotal')}</span>
-                <span className="font-medium">{formatCurrency(subtotal)}</span>
-              </div>
+        {/* Row 2: Billing Items Table */}
+        <div className="border border-border rounded-xl bg-card overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left border-collapse">
+              <thead>
+                <tr className="bg-muted/30 border-b border-border text-muted-foreground text-xs font-semibold uppercase">
+                  <th className="px-4 py-3 w-[8%]">{isBangla ? 'ক্রমিক' : 'S.N.'}</th>
+                  <th className="px-4 py-3 w-[35%]">{isBangla ? 'নাম' : 'Name'}</th>
+                  <th className="px-4 py-3 w-[12%]">{isBangla ? 'পরিমাণ' : 'Quantity'}</th>
+                  <th className="px-4 py-3 w-[15%]">{isBangla ? 'দর' : 'Rate'}</th>
+                  <th className="px-4 py-3 w-[18%]">{isBangla ? 'ছাড়' : 'Discount'}</th>
+                  <th className="px-4 py-3 w-[12%] text-right">{isBangla ? 'মোট' : 'Amount'}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {items.map((item, idx) => (
+                  <tr key={item.id} className="hover:bg-muted/10 transition-colors">
+                    {/* SN */}
+                    <td className="px-4 py-4 font-bold text-amber-500 align-middle">
+                      {idx + 1}
+                    </td>
 
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">{t('common.discount')}</span>
-                <Input
-                  type="number"
-                  value={discount}
-                  onChange={(e) => setDiscount(e.target.value)}
-                  className="w-24 h-8 text-right"
-                  min="0"
-                />
-              </div>
-
-              <Separator />
-
-              <div className="flex justify-between">
-                <span className="font-semibold">{t('common.total')}</span>
-                <span className="font-bold text-lg">{formatCurrency(total)}</span>
-              </div>
-
-              {/* Payment Method */}
-              <div className="space-y-2">
-                <Label className="text-sm">{t('sales.paymentMethod')}</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { value: 'cash', icon: Banknote, label: isBangla ? 'নগদ' : 'Cash' },
-                    { value: 'card', icon: CreditCard, label: isBangla ? 'কার্ড' : 'Card' },
-                    { value: 'mobile_banking', icon: Smartphone, label: isBangla ? 'মোবাইল' : 'Mobile' },
-                    { value: 'credit', icon: User, label: isBangla ? 'বাকি' : 'Credit' },
-                  ].map((method) => (
-                    <Button
-                      key={method.value}
-                      variant={paymentMethod === method.value ? 'default' : 'outline'}
-                      className={cn(
-                        'h-auto py-2',
-                        paymentMethod === method.value && 'bg-emerald-600 hover:bg-emerald-700'
+                    {/* Name */}
+                    <td className="px-4 py-3 align-middle relative">
+                      <Input
+                        value={item.itemName}
+                        onChange={(e) => handleNameChange(item.id, e.target.value)}
+                        onBlur={() => handleRowBlur(item.id)}
+                        placeholder={isBangla ? 'পণ্য নাম লিখুন' : 'Enter Item name'}
+                        className="bg-transparent border-none outline-none focus-visible:ring-0 px-0 h-9"
+                      />
+                      
+                      {item.showSuggestions && (
+                        <div className="absolute z-50 left-4 right-4 top-full mt-1 bg-card border border-border rounded-lg shadow-xl max-h-60 overflow-y-auto divide-y divide-border">
+                          {getFilteredProducts(item.searchQuery).length === 0 ? (
+                            <div className="p-3 text-center text-xs text-muted-foreground">
+                              {isBangla ? 'কোনো পণ্য পাওয়া যায়নি' : 'No items found'}
+                            </div>
+                          ) : (
+                            getFilteredProducts(item.searchQuery).map((product: any) => (
+                              <button
+                                key={product.id}
+                                type="button"
+                                className="w-full text-left p-3 hover:bg-muted/80 text-xs transition-colors flex justify-between"
+                                onClick={() => handleSelectProduct(item.id, product)}
+                              >
+                                <div>
+                                  <p className="font-semibold text-foreground">{product.name}</p>
+                                  <p className="text-[10px] text-muted-foreground">Stock: {product.currentStock} {product.unit}</p>
+                                </div>
+                                <span className="font-bold text-emerald-500">Tk. {product.sellingPrice}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
                       )}
-                      onClick={() => handlePaymentMethodChange(method.value as typeof paymentMethod)}
-                    >
-                      <method.icon className="h-4 w-4 mr-2" />
-                      {method.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
+                    </td>
 
-              {/* Paid Amount */}
-              <div className="space-y-2">
-                <Label className="text-sm">{t('sales.paidAmount')}</Label>
+                    {/* Quantity */}
+                    <td className="px-4 py-3 align-middle">
+                      <Input
+                        type="number"
+                        value={item.quantity || ''}
+                        onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                        className="bg-background/30 h-9 text-center border-input focus:ring-0"
+                        min="1"
+                      />
+                    </td>
+
+                    {/* Rate */}
+                    <td className="px-4 py-3 align-middle">
+                      <div className="relative flex items-center">
+                        <span className="absolute left-3 text-xs text-muted-foreground font-medium">Tk.</span>
+                        <Input
+                          type="number"
+                          value={item.unitPrice || ''}
+                          onChange={(e) => handleRateChange(item.id, e.target.value)}
+                          className="pl-9 bg-background/30 h-9 border-input focus:ring-0"
+                          min="0"
+                        />
+                      </div>
+                    </td>
+
+                    {/* Discount (% and flat) */}
+                    <td className="px-4 py-3 align-middle">
+                      <div className="flex gap-1.5 items-center">
+                        <div className="relative flex-1 flex items-center">
+                          <Input
+                            type="number"
+                            value={item.discountPercent || ''}
+                            onChange={(e) => handleDiscountPercentChange(item.id, e.target.value)}
+                            placeholder="0"
+                            className="bg-background/30 h-9 text-right pr-6 border-input focus:ring-0"
+                            min="0"
+                            max="100"
+                          />
+                          <span className="absolute right-2 text-xs text-muted-foreground font-semibold">%</span>
+                        </div>
+                        <div className="relative flex-1 flex items-center">
+                          <span className="absolute left-2.5 text-[10px] text-muted-foreground font-medium">Tk.</span>
+                          <Input
+                            type="number"
+                            value={item.discountFlat || ''}
+                            onChange={(e) => handleDiscountFlatChange(item.id, e.target.value)}
+                            placeholder="0"
+                            className="pl-7 bg-background/30 h-9 text-right border-input focus:ring-0"
+                            min="0"
+                          />
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Amount & Action */}
+                    <td className="px-4 py-3 align-middle text-right font-medium text-foreground">
+                      <div className="flex items-center justify-end gap-3">
+                        <span className="font-semibold text-foreground text-sm">Tk. {item.total.toFixed(2)}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeItemRow(item.id)}
+                          className="text-muted-foreground hover:text-red-500 transition-colors p-1"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Table Bottom Add Action */}
+          <div className="flex justify-between items-center px-6 py-4 bg-muted/10 border-t border-border">
+            <button
+              type="button"
+              onClick={addItemRow}
+              className="text-emerald-500 font-semibold text-sm flex items-center gap-1.5 hover:text-emerald-600 transition-colors cursor-pointer"
+            >
+              <Plus className="h-4 w-4" />
+              {isBangla ? 'বিল আইটেম যোগ করুন' : 'Add Billing Item'}
+            </button>
+            <div className="flex items-center gap-8">
+              <span className="text-sm text-muted-foreground font-medium">{isBangla ? 'উপমোট' : 'Sub Total'}</span>
+              <span className="font-bold text-foreground text-base">Tk. {subtotal.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Row 3 Layout: Notes, Attachments, Totals and Payment */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+          {/* Notes and Attachments */}
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-foreground">
+                {isBangla ? 'নোট বা মন্তব্য' : 'Notes or Remarks'}
+              </Label>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder={isBangla ? 'নোট লিখুন...' : 'Enter note or description...'}
+                className="min-h-[100px] bg-background/50 border-input resize-none"
+              />
+            </div>
+
+            {/* Attach Images */}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-foreground">
+                {isBangla ? 'ছবি সংযুক্ত করুন' : 'Attach Images'}
+              </Label>
+              <div className="flex flex-wrap gap-3 items-center">
+                <button
+                  type="button"
+                  className="h-16 w-16 rounded-xl border border-dashed border-border flex flex-col items-center justify-center bg-background/30 hover:bg-muted/50 hover:border-emerald-500 transition-all text-muted-foreground hover:text-foreground"
+                >
+                  <Camera className="h-5 w-5 mb-1" />
+                  <span className="text-[10px]">{isBangla ? 'ক্যামেরা' : 'Upload'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Totals, Payment Mode and Submit Actions */}
+          <div className="space-y-6 lg:pl-12">
+            {/* Total Amount Output */}
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-base font-semibold text-foreground">{isBangla ? 'সর্বমোট পরিমাণ' : 'Total Amount'}</span>
+              <div className="relative w-48 flex items-center">
+                <span className="absolute left-3 text-sm text-muted-foreground font-semibold">Tk.</span>
                 <Input
-                  type="number"
-                  value={paidAmount}
-                  onChange={(e) => setPaidAmount(e.target.value)}
-                  placeholder={paymentMethod === 'credit' ? '0' : total.toString()}
+                  value={total.toFixed(2)}
+                  readOnly
+                  className="pl-9 h-11 bg-muted/30 border-input text-right font-bold text-lg text-foreground focus-visible:ring-0"
                 />
-                {paymentMethod !== 'credit' && paidAmount === '' && items.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {isBangla ? 'পূর্ণ পরিমাণ প্রদান করা হবে' : 'Full amount will be paid'}
-                  </p>
-                )}
               </div>
+            </div>
 
-              {/* Due Amount */}
-              {due > 0 && (
-                <div className="p-3 bg-red-50 dark:bg-red-950 rounded-lg">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-red-600">{t('sales.dueAmount')}</span>
-                    <span className="font-bold text-red-600">{formatCurrency(due)}</span>
-                  </div>
-                </div>
-              )}
+            {/* Payment Mode Selector */}
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-base font-semibold text-foreground">{isBangla ? 'পেমেন্ট মোড' : 'Payment Mode'}</span>
+              <div className="w-48">
+                <Select value={paymentMethod} onValueChange={(val: any) => setPaymentMethod(val)}>
+                  <SelectTrigger className="h-11 bg-background/50 border-input text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">{isBangla ? 'নগদ (Cash)' : 'Cash'}</SelectItem>
+                    <SelectItem value="card">{isBangla ? 'কার্ড (Card)' : 'Card'}</SelectItem>
+                    <SelectItem value="mobile_banking">{isBangla ? 'মোবাইল ব্যাংকিং' : 'Mobile Banking'}</SelectItem>
+                    <SelectItem value="credit">{isBangla ? 'বাকি (Credit)' : 'Credit'}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-              {/* Profit Preview */}
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950 rounded-lg">
-                <div className="flex justify-between text-sm">
-                  <span className="text-emerald-600">{t('sales.estimatedProfit')}</span>
-                  <span className="font-bold text-emerald-600">{formatCurrency(totalProfit)}</span>
+            {/* Paid Amount Input (if not Credit) */}
+            {paymentMethod !== 'credit' && (
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-base font-semibold text-foreground">{isBangla ? 'পরিশোধিত পরিমাণ' : 'Paid Amount'}</span>
+                <div className="relative w-48 flex items-center">
+                  <span className="absolute left-3 text-sm text-muted-foreground font-semibold">Tk.</span>
+                  <Input
+                    type="number"
+                    value={paidAmount}
+                    onChange={(e) => setPaidAmount(e.target.value)}
+                    placeholder={total.toString()}
+                    className="pl-9 h-11 bg-background/50 border-input text-right font-bold text-foreground"
+                    min="0"
+                  />
                 </div>
               </div>
-            </CardContent>
-            <CardFooter className="flex-col gap-2">
+            )}
+
+            {/* Due Alert */}
+            {due > 0 && (
+              <div className="p-3.5 bg-destructive/10 border border-destructive/20 rounded-xl flex justify-between items-center text-sm font-semibold">
+                <span className="text-destructive">{isBangla ? 'বাকি পরিমাণ' : 'Due Amount'}</span>
+                <span className="text-destructive font-bold">Tk. {due.toFixed(2)}</span>
+              </div>
+            )}
+
+            {/* Submit Action Buttons */}
+            <div className="flex gap-4 pt-4">
               <Button
-                className="w-full bg-emerald-600 hover:bg-emerald-700"
+                type="button"
+                variant="outline"
+                onClick={() => router.back()}
+                className="flex-1 h-11 border-input hover:bg-muted"
+              >
+                <X className="h-4 w-4 mr-2" />
+                {isBangla ? 'বাতিল' : 'Cancel'}
+              </Button>
+              <Button
+                type="button"
                 onClick={handleSubmit}
-                disabled={items.length === 0 || isPending}
+                disabled={isPending}
+                className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
               >
                 {isPending ? (
-                  <span className="flex items-center gap-2">
-                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
                     {isBangla ? 'সংরক্ষণ হচ্ছে...' : 'Saving...'}
                   </span>
                 ) : (
                   <>
                     <Check className="h-4 w-4 mr-2" />
-                    {t('sales.completeSale')}
+                    {isBangla ? 'বিক্রি সম্পন্ন করুন' : 'Complete Sale'}
                   </>
                 )}
               </Button>
-              <Button variant="outline" className="w-full" onClick={() => router.back()}>
-                <X className="h-4 w-4 mr-2" />
-                {t('common.cancel')}
-              </Button>
-            </CardFooter>
-          </Card>
+            </div>
+          </div>
         </div>
       </div>
     </div>

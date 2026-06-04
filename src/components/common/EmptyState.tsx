@@ -39,11 +39,11 @@ export function EmptyState({
           <Icon className="h-8 w-8 text-gray-400 dark:text-gray-500" />
         </div>
       )}
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 whitespace-nowrap">
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
         {title}
       </h3>
       {description && (
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 whitespace-nowrap overflow-hidden text-ellipsis">
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
           {description}
         </p>
       )}

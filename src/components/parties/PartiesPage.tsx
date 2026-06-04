@@ -46,6 +46,7 @@ import {
   Bell,
   ArrowUpDown,
   Edit,
+  ChevronLeft,
 } from 'lucide-react';
 import { useCurrency, useDateFormat } from '@/hooks/useAppTranslation';
 import { useAppTranslation } from '@/hooks/useAppTranslation';
@@ -166,29 +167,21 @@ export default function PartiesPage() {
         {/* Split Layout Container */}
         <div className="flex flex-col lg:flex-row gap-6 min-h-[600px] items-stretch">
           {/* Left Column: Parties List (40% width) */}
-          <Card className="w-full lg:w-[40%] p-6 flex flex-col shrink-0">
+          <Card className={cn(
+            "w-full lg:w-[40%] p-6 flex flex-col shrink-0",
+            selectedParty && "hidden lg:flex"
+          )}>
             <div className="flex items-center justify-between mb-4 gap-4">
               <h2 className="text-lg font-bold text-foreground">
                 {isBangla ? `পার্টি (${filteredParties.length})` : `Parties (${filteredParties.length})`}
               </h2>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button 
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground h-9 px-4 text-xs font-semibold flex items-center gap-1.5"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    {isBangla ? 'পার্টি যোগ করুন' : 'Add Party'}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-40">
-                  <DropdownMenuItem onClick={() => router.push('/parties/new?type=customer')}>
-                    {isBangla ? 'নতুন গ্রাহক' : 'New Customer'}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push('/parties/new?type=supplier')}>
-                    {isBangla ? 'নতুন সরবরাহকারী' : 'New Supplier'}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button 
+                onClick={() => router.push('/parties/new')}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground h-9 px-4 text-xs font-semibold flex items-center gap-1.5"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {isBangla ? 'পার্টি যোগ করুন' : 'Add Party'}
+              </Button>
             </div>
 
             <div className="flex gap-2 mb-4">
@@ -290,7 +283,10 @@ export default function PartiesPage() {
           </Card>
 
           {/* Right Column: Transaction History and Details (60% width) */}
-          <div className="w-full lg:w-[60%] flex flex-col min-h-[500px] flex-1">
+          <div className={cn(
+            "w-full lg:w-[60%] flex flex-col min-h-[500px] flex-1",
+            !selectedParty && "hidden lg:flex"
+          )}>
             {!selectedParty ? (
               <Card className="flex flex-col items-center justify-center text-center p-12 flex-1 my-auto h-full">
                 <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
@@ -299,7 +295,7 @@ export default function PartiesPage() {
                 <h3 className="text-lg font-semibold text-foreground mb-1">
                   {isBangla ? 'পার্টি নির্বাচন করুন' : 'Select a Party'}
                 </h3>
-                <p className="text-sm text-muted-foreground max-w-sm">
+                <p className="text-sm text-muted-foreground">
                   {isBangla 
                     ? 'পার্টির বিস্তারিত তথ্য এবং লেনদেনের ইতিহাস দেখতে বাম পাশের তালিকা থেকে যেকোনো একটি পার্টি সিলেক্ট করুন।' 
                     : 'Select a party from the list on the left to view their detailed information and complete transaction history.'}
@@ -446,6 +442,14 @@ function PartyDetailsAndTransactions({
       {/* Top Details section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-border">
         <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden shrink-0 h-9 w-9 p-0 flex items-center justify-center"
+            onClick={onClose}
+          >
+            <ChevronLeft className="h-6 w-6 text-foreground" />
+          </Button>
           <div className="h-14 w-14 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center font-bold text-xl shrink-0">
             {getInitials(party.name)}
           </div>

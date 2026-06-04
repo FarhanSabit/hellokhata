@@ -287,11 +287,10 @@ export default function EditPartyPage({ params }: EditPartyPageProps) {
             <Label className="mb-2 block">
               {isBangla ? 'ধরন' : 'Type'}
             </Label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {[
                 { value: 'customer', icon: User, label: isBangla ? 'গ্রাহক' : 'Customer' },
                 { value: 'supplier', icon: Building2, label: isBangla ? 'সরবরাহকারী' : 'Supplier' },
-                { value: 'both', label: isBangla ? 'উভয়' : 'Both' },
               ].map((type) => (
                 <button
                   key={type.value}
@@ -430,7 +429,7 @@ export default function EditPartyPage({ params }: EditPartyPageProps) {
           </div>
 
           {/* Customer Tier */}
-          {(formData.type === 'customer' || formData.type === 'both') && (
+          {formData.type === 'customer' && (
             <div>
               <Label className="mb-2 block">{isBangla ? 'গ্রাহক স্তর' : 'Customer Tier'}</Label>
               <Select

@@ -123,11 +123,10 @@ export default function NewPartyPage() {
                 <Label className="mb-2 block">
                   {isBangla ? 'ধরন' : 'Type'}
                 </Label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {[
                     { value: 'customer', icon: User, label: isBangla ? 'গ্রাহক' : 'Customer' },
                     { value: 'supplier', icon: Building2, label: isBangla ? 'সরবরাহকারী' : 'Supplier' },
-                    { value: 'both', label: isBangla ? 'উভয়' : 'Both' },
                   ].map((type) => (
                     <button
                       key={type.value}
@@ -218,7 +217,7 @@ export default function NewPartyPage() {
               </div>
 
               {/* Credit Settings (for customers) */}
-              {(formData.type === 'customer' || formData.type === 'both') && (
+              {formData.type === 'customer' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-lg bg-muted/30 border">
                   <div>
                     <Label className="mb-2 block">
